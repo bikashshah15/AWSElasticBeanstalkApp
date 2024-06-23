@@ -46,10 +46,19 @@ jobs:
       - name: Save Docker image to tar file
         run: docker save bikashshah15/testspringbootapplication2:latest -o image.tar
 
+      - name: Verify AWS CLI version
+        run: aws --version
+
+      - name: Configure AWS CLI
+        run: |
+          aws configure set aws_access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws configure set aws_secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws configure set region us-east-1
+
+      - name: Verify S3 bucket access
+        run: aws s3 ls s3://my-app-deploy-bucket/
+
       - name: Upload Docker image to S3
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: aws s3 cp image.tar s3://my-app-deploy-bucket/image.tar
 
   deploy:
