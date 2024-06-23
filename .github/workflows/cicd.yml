@@ -5,7 +5,10 @@ on:
     branches:
       - main
       - deploy-to-EBS
-
+  pull_request:
+    branches:
+      - main
+      - deploy-to-EBS
 
 jobs:
   build:
@@ -69,19 +72,22 @@ jobs:
       - name: Checkout the source code
         uses: actions/checkout@v4
 
+      - name: Configure AWS CLI
+        run: |
+          aws configure set aws_access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws configure set aws_secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws configure set region us-east-1
+
+      - name: List objects in S3 bucket
+        run: aws s3 ls s3://my-app-deploy-bucket/
+
       - name: Download Docker image from S3
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: aws s3 cp s3://my-app-deploy-bucket/image.tar image.tar
 
       - name: Load Docker image
         run: docker load -i image.tar
 
       - name: Deploy to EB
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
           zip -r deployment.zip Dockerrun.aws.json
           aws s3 cp deployment.zip s3://my-app-deploy-bucket/deployment.zip
