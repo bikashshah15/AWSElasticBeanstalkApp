@@ -5,10 +5,7 @@ on:
     branches:
       - main
       - deploy-to-EBS
-  pull_request:
-    branches:
-      - main
-      - deploy-to-EBS
+
 
 jobs:
   build:
@@ -44,12 +41,31 @@ jobs:
           push: true
           tags: bikashshah15/testspringbootapplication2:latest
 
+      - name: Save Docker image to tar file
+        run: docker save bikashshah15/testspringbootapplication2:latest -o image.tar
+
+      - name: Upload Docker image to S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: aws s3 cp image.tar s3://my-app-deploy-bucket/image.tar
+
   deploy:
     needs: build
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout the source code
         uses: actions/checkout@v4
+
+      - name: Download Docker image from S3
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: aws s3 cp s3://my-app-deploy-bucket/image.tar image.tar
+
+      - name: Load Docker image
+        run: docker load -i image.tar
 
       - name: Deploy to EB
         env:
@@ -59,4 +75,4 @@ jobs:
           zip -r deployment.zip Dockerrun.aws.json
           aws s3 cp deployment.zip s3://my-app-deploy-bucket/deployment.zip
           aws elasticbeanstalk create-application-version --application-name testspringbootapplication2 --version-label ${{ github.sha }} --source-bundle S3Bucket=my-app-deploy-bucket,S3Key=deployment.zip
-          aws elasticbeanstalk update-environment --environment-name Testspringbootapplication2-env --version-label ${{ github.sha }}
+          aws elasticbeanstalk update-environment --environment-name Testspr

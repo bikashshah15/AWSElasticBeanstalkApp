@@ -1,12 +1,17 @@
 {
-  "AWSEBDockerrunVersion": "1",
-  "Image": {
-    "Name": "bikashshah15/testspringbootapplication2:latest",
-    "Update": "true"
-  },
-  "Ports": [
+  "AWSEBDockerrunVersion": 2,
+  "containerDefinitions": [
     {
-      "ContainerPort": 8080
+      "name": "app",
+      "image": "bikashshah15/testspringbootapplication2:latest",
+      "essential": true,
+      "memory": 512,
+      "portMappings": [
+        {
+          "hostPort": 80,
+          "containerPort": 8080
+        }
+      ]
     }
   ]
 }
