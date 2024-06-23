@@ -5,10 +5,7 @@ on:
     branches:
       - main
       - deploy-to-EBS
-  pull_request:
-    branches:
-      - main
-      - deploy-to-EBS
+
 
 jobs:
   build:
@@ -37,12 +34,11 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          push: true
-          tags: bikashshah15/testspringbootapplication2:latest
+      - name: Build Docker image
+        run: docker build -t bikashshah15/testspringbootapplication2:latest .
+
+      - name: Push Docker image to Docker Hub
+        run: docker push bikashshah15/testspringbootapplication2:latest
 
       - name: List Docker images
         run: docker images
