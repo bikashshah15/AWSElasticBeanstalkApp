@@ -1,65 +1,116 @@
-# This workflow will build a Java project with Maven, and cache/restore any dependencies to improve the workflow execution time
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-java-with-maven
-
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
-
 name: Deploy to Elastic Beanstalk
 
 on:
   push:
     branches:
-    - main
-  pull_request:
-    branches:
-    - main
+      - main
+      - deploy-to-EBS
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout the source code
-      uses: actions/checkout@v4
+      - name: Checkout the source code
+        uses: actions/checkout@v4
 
-    - name: Set up JDK 17
-      uses: actions/setup-java@v3
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-        cache: maven
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
 
-    - name: Build with Maven
-      run: mvn clean install -DskipTests
+      - name: Build with Maven
+        run: mvn clean install -DskipTests
 
-    - name: Upload build artifact
-      uses: actions/upload-artifact@v3
-      with:
-        name: build-artifact
-        path: target/AWSElasticBeanstalkApp-0.0.1-SNAPSHOT.jar
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
 
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build Docker image
+        run: docker build -t bikashshah15/testspringbootapplication2:latest .
+
+      - name: Push Docker image to Docker Hub
+        run: docker push bikashshah15/testspringbootapplication2:latest
+
+      - name: List Docker images
+        run: docker images
+
+      - name: Save Docker image to tar file
+        run: docker save bikashshah15/testspringbootapplication2:latest -o image.tar
+
+      - name: Verify AWS CLI version
+        run: aws --version
+
+      - name: Configure AWS CLI
+        run: |
+          aws configure set aws_access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws configure set aws_secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws configure set region us-east-1
+
+      - name: Verify S3 bucket access
+        run: aws s3 ls s3://my-app-deploy-bucket/
+
+      - name: Upload Docker image to S3
+        run: aws s3 cp image.tar s3://my-app-deploy-bucket/image.tar
 
   deploy:
     needs: build
     runs-on: ubuntu-latest
+
     steps:
-      - name: Download build artifact
-        uses: actions/download-artifact@v3
-        with:
-          name: build-artifact
-          path: target/
+      - name: Checkout the source code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS CLI
+        run: |
+          aws configure set aws_access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws configure set aws_secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws configure set region us-east-1
+
+      - name: List objects in S3 bucket
+        run: aws s3 ls s3://my-app-deploy-bucket/
+
+      - name: Download Docker image from S3
+        run: aws s3 cp s3://my-app-deploy-bucket/image.tar image.tar
+
+      - name: Load Docker image
+        run: docker load -i image.tar
+
+      - name: Fetch EB Logs
+        run: aws elasticbeanstalk request-environment-info --environment-name Testspringbootapplication2-env --info-type tail
+
+      - name: Wait for logs to be ready
+        run: sleep 30
+
+      - name: Retrieve EB Logs
+        run: aws elasticbeanstalk retrieve-environment-info --environment-name Testspringbootapplication2-env --info-type tail
+
+      - name: Restart app server(s)
+        run: aws elasticbeanstalk restart-app-server --environment-name Testspringbootapplication2-env
+
+      - name: Wait for environment to stabilize
+        run: sleep 120
 
       - name: Deploy to EB
-        uses: einaregilsson/beanstalk-deploy@v22
-        with:
-          aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          application_name: 'springboot-example2'
-          environment_name: 'Springboot-example2-env'
-          version_label: ${{ github.sha }}
-          region: us-east-1
-          deployment_package: target/AWSElasticBeanstalkApp-0.0.1-SNAPSHOT.jar
-
+        run: |
+          zip -r deployment.zip Dockerrun.aws.json
+          aws s3 cp deployment.zip s3://my-app-deploy-bucket/deployment.zip
+          VERSION_LABEL=$(date +%Y%m%d%H%M%S)
+          aws elasticbeanstalk create-application-version --application-name testspringbootapplication2 --version-label $VERSION_LABEL --source-bundle S3Bucket=my-app-deploy-bucket,S3Key=deployment.zip
+          echo "Waiting for the environment to be ready..."
+          while true; do
+            ENV_STATUS=$(aws elasticbeanstalk describe-environments --environment-names Testspringbootapplication2-env --query 'Environments[0].Status' --output text)
+            if [ "$ENV_STATUS" == "Ready" ]; then
+              echo "Environment is ready."
+              break
+            fi
+            echo "Environment is $ENV_STATUS. Waiting for it to be ready..."
+            sleep 30
+          done
