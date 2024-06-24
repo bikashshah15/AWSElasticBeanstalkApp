@@ -5,10 +5,6 @@ on:
     branches:
       - main
       - deploy-to-EBS
-  pull_request:
-    branches:
-      - main
-      - deploy-to-EBS
 
 jobs:
   build:
@@ -87,9 +83,34 @@ jobs:
       - name: Load Docker image
         run: docker load -i image.tar
 
+      - name: Fetch EB Logs
+        run: aws elasticbeanstalk request-environment-info --environment-name Testspringbootapplication2-env --info-type tail
+
+      - name: Wait for logs to be ready
+        run: sleep 30
+
+      - name: Retrieve EB Logs
+        run: aws elasticbeanstalk retrieve-environment-info --environment-name Testspringbootapplication2-env --info-type tail
+
+      - name: Restart app server(s)
+        run: aws elasticbeanstalk restart-app-server --environment-name Testspringbootapplication2-env
+
+      - name: Wait for environment to stabilize
+        run: sleep 120
+
       - name: Deploy to EB
         run: |
           zip -r deployment.zip Dockerrun.aws.json
           aws s3 cp deployment.zip s3://my-app-deploy-bucket/deployment.zip
-          aws elasticbeanstalk create-application-version --application-name testspringbootapplication2 --version-label ${{ github.sha }} --source-bundle S3Bucket=my-app-deploy-bucket,S3Key=deployment.zip
-          aws elasticbeanstalk update-environment --environment-name Testspringbootapplication2-env --version-label ${{ github.sha }}
+          VERSION_LABEL=$(date +%Y%m%d%H%M%S)
+          aws elasticbeanstalk create-application-version --application-name testspringbootapplication2 --version-label $VERSION_LABEL --source-bundle S3Bucket=my-app-deploy-bucket,S3Key=deployment.zip
+          echo "Waiting for the environment to be ready..."
+          while true; do
+            ENV_STATUS=$(aws elasticbeanstalk describe-environments --environment-names Testspringbootapplication2-env --query 'Environments[0].Status' --output text)
+            if [ "$ENV_STATUS" == "Ready" ]; then
+              echo "Environment is ready."
+              break
+            fi
+            echo "Environment is $ENV_STATUS. Waiting for it to be ready..."
+            sleep 30
+          done
